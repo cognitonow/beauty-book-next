@@ -43,12 +43,10 @@ export const updateUser = functions.https.onRequest(async (req: any, res: any) =
     }
 
     const idToken = authHeader.split('Bearer ')[1];
-    const decodedToken = await admin.auth().verifyIdToken(idToken);
-    const authenticatedUserId = decodedToken.uid;
-
+    const authenticatedUserId = (await admin.auth().verifyIdToken(idToken)).uid;
     // Authorization: Ensure authenticated user is the user being updated or is an admin
     // TODO: Implement admin role check if needed
-    if (authenticatedUserId !== userId) {
+    if (authenticatedUserId !== userId) { // Now using the extracted uid
         (res as any).status(403).json({ error: 'Forbidden: Insufficient permissions' }); // Used type assertion
         return;
     }
@@ -71,6 +69,8 @@ export const updateUser = functions.https.onRequest(async (req: any, res: any) =
     // Get a reference to the user document
     const userRef = db.collection('users').doc(userId);
     const userDoc = await userRef.get();
+    console.log('Result of userRef.get():', userDoc);
+    console.log('userDoc before exists check:', userDoc);
 
     if (!userDoc.exists) {
       (res as any).status(404).json({ error: 'User not found' }); // Used type assertion
@@ -79,8 +79,8 @@ export const updateUser = functions.https.onRequest(async (req: any, res: any) =
 
     // Update the user document with validated data and updated timestamp
     await userRef.update({
-        ...validatedData,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+ ...validatedData,
+ updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
     (res as any).status(200).json({ message: 'User updated successfully' }); // Used type assertion
@@ -348,8 +348,6 @@ export const searchUsers = functions.https.onRequest(async (req: any, res: any) 
     (res as any).status(405).send('Method Not Allowed'); // Used type assertion
     return;
   }
-
-  const keyword = (req as any).query.keyword as string; // Used type assertion and casting
 
   try {
     // TODO: Implement search logic using the 'keyword' to filter users from Firestore
