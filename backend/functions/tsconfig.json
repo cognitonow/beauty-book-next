@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "noImplicitReturns": true,
+    "noUnusedLocals": true,
+    "outDir": "lib",
+    "sourceMap": true,
+    "strict": true,
+    "target": "es2020",
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "types": ["firebase-functions", "firebase-admin", "jest"]
+  },
+  "compileOnSave": true,
+  "include": [
+    "src"
+  ],
+  "exclude": [ // Added exclude array
+    "node_modules/zod/v4/locales" // Exclude Zod locales
+  ]
+}

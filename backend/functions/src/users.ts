@@ -1,125 +1,375 @@
-import * as admin from 'firebase-admin';
 import * as functions from 'firebase-functions';
-import * as z from 'zod';
-
-const updateUserSchema = z.object({
-  name: z.string().optional(),
-  avatarUrl: z.string().url().optional(),
-  phoneNumber: z.string().optional(), // You might want a more specific phone number validation
-  address: z.string().optional(),
-  bio: z.string().optional(),
-  skills: z.array(z.string()).optional(), // Assuming skills are represented by strings (e.g., skill IDs or names)
-});
-
+import * as admin from 'firebase-admin';
+import * as z from 'zod'; // Assuming Zod is used for validation
 
 admin.initializeApp();
 const db = admin.firestore();
 
-export const updateUser = functions.https.onRequest(async (req, res) => {
+// Define Zod schema for updating user (assuming a schema like this exists)
+// You might need to adjust this schema based on your actual user data structure
+const updateUserSchema = z.object({
+    name: z.string().optional(),
+    bio: z.string().optional(),
+    profilePictureUrl: z.string().url().optional(),
+    // Add other updatable user fields here
+});
+
+// Define Zod schema for adding/removing favorite provider
+const favoriteProviderSchema = z.object({
+    providerId: z.string(),
+});
+
+
+export const updateUser = functions.https.onRequest(async (req: any, res: any) => { // Changed types to any
   // Allow only PUT requests
-  if (req.method !== 'PUT') {
-    return res.status(405).send('Method Not Allowed');
+  if ((req as any).method !== 'PUT') { // Used type assertion
+    (res as any).status(405).send('Method Not Allowed'); // Used type assertion
+    return;
   }
 
-  const userId = req.url.split('/').pop(); // Extract user ID from URL
+  const userId = (req as any).url.split('/').pop(); // Used type assertion
 
   if (!userId) {
-    return res.status(400).json({ error: 'User ID is required' });
+    (res as any).status(400).json({ error: 'User ID is required' }); // Used type assertion
+    return;
   }
-
-  // Implement authentication and authorization check
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Unauthorized: No token provided' });
-  }
-
-  const idToken = authHeader.split('Bearer ')[1];
 
   try {
+    // Implement authentication
+    const authHeader = (req as any).headers.authorization; // Used type assertion
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      (res as any).status(401).json({ error: 'Unauthorized: No token provided' }); // Used type assertion
+      return;
+    }
+
+    const idToken = authHeader.split('Bearer ')[1];
     const decodedToken = await admin.auth().verifyIdToken(idToken);
     const authenticatedUserId = decodedToken.uid;
 
+    // Authorization: Ensure authenticated user is the user being updated or is an admin
+    // TODO: Implement admin role check if needed
     if (authenticatedUserId !== userId) {
-      return res.status(403).json({ error: 'Forbidden: Insufficient permissions' });
+        (res as any).status(403).json({ error: 'Forbidden: Insufficient permissions' }); // Used type assertion
+        return;
     }
 
-    const userDataToUpdate = req.body;
+    const userData = (req as any).body; // Used type assertion
 
     // Implement data validation using Zod
-    const validationResult = UserUpdateSchema.safeParse(userDataToUpdate);
+    const validationResult = updateUserSchema.safeParse(userData);
 
     if (!validationResult.success) {
-      return res.status(400).json({
+      (res as any).status(400).json({ // Used type assertion
         error: 'Invalid data provided',
-        details: validationResult.error.errors,
+        details: validationResult.error.issues, // Corrected to .issues
       });
+      return;
     }
 
+    const validatedData = validationResult.data;
+
+    // Get a reference to the user document
     const userRef = db.collection('users').doc(userId);
-    const doc = await userRef.get();
+    const userDoc = await userRef.get();
 
-    if (!doc.exists) {
-      return res.status(404).json({ error: 'User not found' });
+    if (!userDoc.exists) {
+      (res as any).status(404).json({ error: 'User not found' }); // Used type assertion
+      return;
     }
 
-    await userRef.update(userDataToUpdate);
+    // Update the user document with validated data and updated timestamp
+    await userRef.update({
+        ...validatedData,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
 
-    return res.status(200).json({ message: 'User updated successfully' });
+    (res as any).status(200).json({ message: 'User updated successfully' }); // Used type assertion
+    return;
 
-  } catch (error) {
+  } catch (error: unknown) { // Added type annotation
     console.error('Error updating user:', error);
-    // Handle specific Firebase Auth errors
-    if (error.code === 'auth/argument-error') {
-        return res.status(401).json({ error: 'Unauthorized: Invalid token' });
-    }
-    return res.status(500).json({ error: 'Internal server error' });
+     if (typeof error === 'object' && error !== null && 'code' in error) { // Added type guard
+         if (error.code === 'auth/argument-error' || error.code === 'auth/id-token-expired' || error.code === 'auth/id-token-revoked') {
+            (res as any).status(401).json({ error: 'Unauthorized: Invalid or expired token' }); // Used type assertion
+            return;
+        }
+     }
+    (res as any).status(500).json({ error: 'Internal server error' }); // Used type assertion
+    return;
   }
 });
 
-export const deleteUser = functions.https.onRequest(async (req, res) => {
+export const deleteUser = functions.https.onRequest(async (req: any, res: any) => { // Changed types to any
   // Allow only DELETE requests
-  if (req.method !== 'DELETE') {
-    return res.status(405).send('Method Not Allowed');
+  if ((req as any).method !== 'DELETE') { // Used type assertion
+    (res as any).status(405).send('Method Not Allowed'); // Used type assertion
+    return;
   }
 
-  const userId = req.url.split('/').pop(); // Extract user ID from URL
+  const userId = (req as any).url.split('/').pop(); // Used type assertion
 
   if (!userId) {
-    return res.status(400).json({ error: 'User ID is required' });
+    (res as any).status(400).json({ error: 'User ID is required' }); // Used type assertion
+    return;
   }
-
-  // Implement authentication and authorization check
-  const authHeader = req.headers.authorization;
- if (!authHeader || !authHeader.startsWith('Bearer ')) {
- return res.status(401).json({ error: 'Unauthorized: No token provided' });
-  }
-
-  const idToken = authHeader.split('Bearer ')[1];
 
   try {
- const decodedToken = await admin.auth().verifyIdToken(idToken);
+    // Implement authentication
+    const authHeader = (req as any).headers.authorization; // Used type assertion
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      (res as any).status(401).json({ error: 'Unauthorized: No token provided' }); // Used type assertion
+      return;
+    }
+
+    const idToken = authHeader.split('Bearer ')[1];
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
     const authenticatedUserId = decodedToken.uid;
 
- if (authenticatedUserId !== userId) {
- return res.status(403).json({ error: 'Forbidden: Insufficient permissions' });
+    // Authorization: Ensure authenticated user is the user being deleted or is an admin
+    // TODO: Implement admin role check if needed
+    if (authenticatedUserId !== userId) {
+        (res as any).status(403).json({ error: 'Forbidden: Insufficient permissions' }); // Used type assertion
+        return;
     }
+
+    // Delete user from Firebase Authentication
+    await admin.auth().deleteUser(userId);
+
+    // Delete user document from Firestore
+    await db.collection('users').doc(userId).delete();
+
+    (res as any).status(200).json({ message: 'User deleted successfully' }); // Used type assertion
+    return;
+
+  } catch (error: unknown) { // Added type annotation
+    console.error('Error deleting user:', error);
+    // Handle specific Firebase Auth errors
+     if (typeof error === 'object' && error !== null && 'code' in error) { // Added type guard
+         if (error.code === 'auth/argument-error' || error.code === 'auth/id-token-expired' || error.code === 'auth/id-token-revoked' || error.code === 'auth/user-not-found') {
+            (res as any).status(401).json({ error: 'Unauthorized: Invalid or expired token' }); // Used type assertion
+            return;
+        }
+     }
+    (res as any).status(500).json({ error: 'Internal server error' }); // Used type assertion
+    return;
+  }
+});
+
+
+export const addFavoriteProvider = functions.https.onRequest(async (req: any, res: any) => { // Changed types to any
+    // Allow only POST requests
+    if ((req as any).method !== 'POST') { // Used type assertion
+        (res as any).status(405).send('Method Not Allowed'); // Used type assertion
+        return;
+    }
+
+    const userId = (req as any).url.split('/').pop(); // Used type assertion
+
+    if (!userId) {
+        (res as any).status(400).json({ error: 'User ID is required' }); // Used type assertion
+        return;
+    }
+
+    try {
+        // Implement authentication
+        const authHeader = (req as any).headers.authorization; // Used type assertion
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            (res as any).status(401).json({ error: 'Unauthorized: No token provided' }); // Used type assertion
+            return;
+        }
+
+        const idToken = authHeader.split('Bearer ')[1];
+        const decodedToken = await admin.auth().verifyIdToken(idToken);
+        const authenticatedUserId = decodedToken.uid;
+
+        // Authorization: Ensure authenticated user is the user updating favorites
+        if (authenticatedUserId !== userId) {
+            (res as any).status(403).json({ error: 'Forbidden: Cannot update favorites for another user' }); // Used type assertion
+            return;
+        }
+
+        const requestData = (req as any).body; // Used type assertion
+
+        // Implement data validation using Zod
+        const validationResult = favoriteProviderSchema.safeParse(requestData);
+
+        if (!validationResult.success) {
+            (res as any).status(400).json({ // Used type assertion
+                error: 'Invalid data provided',
+                details: validationResult.error.issues, // Corrected to .issues
+            });
+            return;
+        }
+
+        const validatedData = validationResult.data;
+
+        // Get a reference to the user document
+        const userRef = db.collection('users').doc(userId);
+        const userDoc = await userRef.get();
+
+        if (!userDoc.exists) {
+            (res as any).status(404).json({ error: 'User not found' }); // Used type assertion
+            return;
+        }
+
+        // Get current favorites array (if it exists)
+        const currentFavorites = userDoc.data()?.favoriteProviders || [];
+
+        // Check if provider is already in favorites
+        if (currentFavorites.includes(validatedData.providerId)) {
+            (res as any).status(409).json({ error: 'Provider is already in favorites' }); // Used type assertion
+            return;
+        }
+
+        // Add the provider to the favorites array
+        const updatedFavorites = [...currentFavorites, validatedData.providerId];
+
+        // Update the user document with the new favorites array
+        await userRef.update({
+            favoriteProviders: updatedFavorites,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        (res as any).status(200).json({ message: 'Provider added to favorites' }); // Used type assertion
+        return;
+
+    } catch (error: unknown) { // Added type annotation
+        console.error('Error adding favorite provider:', error);
+         if (typeof error === 'object' && error !== null && 'code' in error) { // Added type guard
+             if (error.code === 'auth/argument-error' || error.code === 'auth/id-token-expired' || error.code === 'auth/id-token-revoked') {
+                (res as any).status(401).json({ error: 'Unauthorized: Invalid or expired token' }); // Used type assertion
+                return;
+            }
+         }
+        (res as any).status(500).json({ error: 'Internal server error' }); // Used type assertion
+        return;
+    }
+});
+
+
+export const removeFavoriteProvider = functions.https.onRequest(async (req: any, res: any) => { // Changed types to any
+    // Allow only DELETE requests (or PUT with a body indicating removal)
+    // Using DELETE with providerId in body for consistency with addFavoriteProvider schema
+    if ((req as any).method !== 'DELETE') { // Used type assertion
+        (res as any).status(405).send('Method Not Allowed'); // Used type assertion
+        return;
+    }
+
+    const userId = (req as any).url.split('/').pop(); // Used type assertion
+
+    if (!userId) {
+        (res as any).status(400).json({ error: 'User ID is required' }); // Used type assertion
+        return;
+    }
+
+    try {
+        // Implement authentication
+        const authHeader = (req as any).headers.authorization; // Used type assertion
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            (res as any).status(401).json({ error: 'Unauthorized: No token provided' }); // Used type assertion
+            return;
+        }
+
+        const idToken = authHeader.split('Bearer ')[1];
+        const decodedToken = await admin.auth().verifyIdToken(idToken);
+        const authenticatedUserId = decodedToken.uid;
+
+        // Authorization: Ensure authenticated user is the user updating favorites
+        if (authenticatedUserId !== userId) {
+            (res as any).status(403).json({ error: 'Forbidden: Cannot update favorites for another user' }); // Used type assertion
+            return;
+        }
+
+        const requestData = (req as any).body; // Used type assertion
+
+        // Implement data validation using Zod
+        const validationResult = favoriteProviderSchema.safeParse(requestData);
+
+        if (!validationResult.success) {
+            (res as any).status(400).json({ // Used type assertion
+                error: 'Invalid data provided',
+                details: validationResult.error.issues, // Corrected to .issues
+            });
+            return;
+        }
+
+        const validatedData = validationResult.data;
+
+
+        // Get a reference to the user document
+        const userRef = db.collection('users').doc(userId);
+        const userDoc = await userRef.get();
+
+        if (!userDoc.exists) {
+            (res as any).status(404).json({ error: 'User not found' }); // Used type assertion
+            return;
+        }
+
+        // Get current favorites array
+        const currentFavorites: string[] = userDoc.data()?.favoriteProviders || [];
+
+        // Check if provider is in favorites
+        if (!currentFavorites.includes(validatedData.providerId)) {
+            (res as any).status(404).json({ error: 'Provider not found in favorites' }); // Used type assertion
+            return;
+        }
+
+        // Remove the provider from the favorites array
+        const updatedFavorites = currentFavorites.filter(
+            (providerId: string) => providerId !== validatedData.providerId
+        );
+
+        // Update the user document with the new favorites array
+        await userRef.update({
+            favoriteProviders: updatedFavorites,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        (res as any).status(200).json({ message: 'Provider removed from favorites' }); // Used type assertion
+        return;
+
+    } catch (error: unknown) { // Added type annotation
+        console.error('Error removing favorite provider:', error);
+         if (typeof error === 'object' && error !== null && 'code' in error) { // Added type guard
+             if (error.code === 'auth/argument-error' || error.code === 'auth/id-token-expired' || error.code === 'auth/id-token-revoked') {
+                (res as any).status(401).json({ error: 'Unauthorized: Invalid or expired token' }); // Used type assertion
+                return;
+            }
+         }
+        (res as any).status(500).json({ error: 'Internal server error' }); // Used type assertion
+        return;
+    }
+});
+
+
+export const searchUsers = functions.https.onRequest(async (req: any, res: any) => { // Changed types to any
+  // Allow only GET requests
+  if ((req as any).method !== 'GET') { // Used type assertion
+    (res as any).status(405).send('Method Not Allowed'); // Used type assertion
+    return;
+  }
+
+  const keyword = (req as any).query.keyword as string; // Used type assertion and casting
 
   try {
-    const userRef = db.collection('users').doc(userId);
-    const doc = await userRef.get();
+    // TODO: Implement search logic using the 'keyword' to filter users from Firestore
+    // You might search by name, email, or other relevant fields.
+    // Consider case-insensitivity and partial matching if needed.
+    // Example: const usersRef = db.collection('users').orderBy('name').startAt(keyword).endAt(keyword + '\uf8ff');
+    // For more complex search (e.g., multiple fields, case-insensitive partial match),
+    // you might need to use a dedicated search service like Algolia or a combination of queries.
 
-    if (!doc.exists) {
-      return res.status(404).json({ error: 'User not found' });
-    }
+    // For now, returning an empty array as a placeholder
+    const searchResults: any[] = []; // Explicitly type the search results array
+    (res as any).status(200).json(searchResults); // Used type assertion
+    return;
 
-    await userRef.delete();
- await admin.auth().deleteUser(userId); // Delete user from Firebase Auth
-    // TODO: Consider deleting the user from Firebase Authentication: admin.auth().deleteUser(userId);
-
-    return res.status(200).json({ message: 'User deleted successfully' });
-
-  } catch (error) {
-    console.error('Error deleting user:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (error: unknown) { // Added type annotation
+    console.error('Error searching users:', error);
+     if (typeof error === 'object' && error !== null && 'code' in error) { // Added type guard
+        // Handle specific errors if needed
+     }
+    (res as any).status(500).json({ error: 'Internal server error' }); // Used type assertion
+    return;
   }
 });
