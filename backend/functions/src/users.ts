@@ -19,6 +19,13 @@ const favoriteProviderSchema = z.object({
     providerId: z.string(),
 });
 
+// Define Zod schema for creating a user (assuming a schema like this exists)
+const createUserSchema = z.object({
+    email: z.string().email(),
+    password: z.string().min(6), // Assuming a minimum password length
+    displayName: z.string().optional(),
+});
+
 
 export const updateUser = functions.https.onRequest(async (req: any, res: any) => { // Changed types to any
   // Allow only PUT requests
@@ -341,6 +348,66 @@ export const removeFavoriteProvider = functions.https.onRequest(async (req: any,
     }
 });
 
+
+export const createUser = functions.https.onRequest(async (req: any, res: any) => {
+    // Allow only POST requests
+    if ((req as any).method !== 'POST') {
+        (res as any).status(405).send('Method Not Allowed');
+        return;
+    }
+
+    const userData = (req as any).body;
+
+    // Implement data validation using Zod
+    const validationResult = createUserSchema.safeParse(userData);
+
+    if (!validationResult.success) {
+        (res as any).status(400).json({
+            error: 'Invalid data provided',
+            details: validationResult.error.issues,
+        });
+        return;
+    }
+
+    const validatedData = validationResult.data;
+
+    try {
+        // Create user in Firebase Authentication
+        const userRecord = await admin.auth().createUser({
+            email: validatedData.email,
+            password: validatedData.password,
+            displayName: validatedData.displayName,
+        });
+
+        // Create user document in Firestore
+        await db.collection('users').doc(userRecord.uid).set({
+            uid: userRecord.uid,
+            email: userRecord.email,
+            displayName: userRecord.displayName,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            // Add any other default user properties here
+            role: 'looker', // Assign a default role, adjust as needed
+            favoriteProviders: [],
+        });
+
+        (res as any).status(201).json({ message: 'User created successfully', uid: userRecord.uid });
+        return;
+
+    } catch (error: unknown) {
+        console.error('Error creating user:', error);
+        // Handle specific Firebase Auth errors (e.g., email-already-in-use)
+        if (typeof error === 'object' && error !== null && 'code' in error) {
+            if (error.code === 'auth/email-already-in-use') {
+                (res as any).status(409).json({ error: 'Email address is already in use' });
+                return;
+            }
+            // Handle other auth errors as needed
+        }
+        (res as any).status(500).json({ error: 'Internal server error' });
+        return;
+    }
+});
 
 export const searchUsers = functions.https.onRequest(async (req: any, res: any) => { // Changed types to any
   // Allow only GET requests

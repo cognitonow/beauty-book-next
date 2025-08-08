@@ -8,7 +8,8 @@ jest.mock('firebase-admin', () => ({
   initializeApp: jest.fn(), // Keep initializeApp mock if needed
   auth: () => ({
     verifyIdToken: mockVerifyIdToken, // Reference the mock function
-  }),
+    createUser: jest.fn(), // Add mock createUser method
+  }), // Removed duplicate createUser mock
   firestore: () => ({
     collection: jest.fn(() => ({
       doc: jest.fn(() => ({
@@ -18,7 +19,7 @@ jest.mock('firebase-admin', () => ({
       })),
     })),
     FieldValue: {
-      arrayUnion: jest.fn(),
+ arrayUnion: jest.fn(() => 'mock-array-union'), // Explicitly mock arrayUnion
       arrayRemove: jest.fn(),
       serverTimestamp: jest.fn(() => 'mock-timestamp'), // Explicitly mock serverTimestamp
     } as any, // Add type assertion here
@@ -83,12 +84,12 @@ describe('User Cloud Functions', () => {
         send: jest.fn(), // Add type annotation for send
       };
 
-      // Mock Firestore interactions - Document exists
+ // Mock Firestore interactions - Document exists
       const mockDoc = {
- exists: true, // Explicitly set exists to true
+ exists: true,
         data: jest.fn(() => ({})), // Provide a default empty data object
       };
-
+ // Mock the doc and get methods
       const mockDocRef = {
  get: jest.fn().mockResolvedValue(mockDoc), // Ensure get returns the mockDoc
         update: jest.fn().mockResolvedValue(true), // Indicate successful update
@@ -98,10 +99,10 @@ describe('User Cloud Functions', () => {
         doc: jest.fn(() => mockDocRef),
       };
       jest.spyOn(admin.firestore(), 'collection').mockReturnValue(mockCollection as any);
-
+ // Get the update mock
       const mockUpdate = mockDocRef.update;
 
-      // Mock admin.auth().verifyIdToken
+ // Mock admin.auth().verifyIdToken
       mockVerifyIdToken.mockResolvedValue({ uid: authenticatedUserId });
 
       // Call the function
@@ -142,7 +143,7 @@ describe('User Cloud Functions', () => {
         json: jest.fn(),
       };
 
-      // Mock Firestore interactions - Document exists for authorization check
+ // Mock Firestore interactions - Document exists for authorization check
       const mockDoc = {
         exists: true, // Document exists for authorization check
         data: jest.fn(() => ({})), // Provide a default empty data object if needed for authorization logic
@@ -158,7 +159,7 @@ describe('User Cloud Functions', () => {
       };
       jest.spyOn(admin.firestore(), 'collection').mockReturnValue(mockCollection as any);
 
-      // Mock admin.auth().verifyIdToken
+ // Mock admin.auth().verifyIdToken
       mockVerifyIdToken.mockResolvedValue({ uid: authenticatedUserId });
 
       // Call the function
@@ -193,7 +194,7 @@ describe('User Cloud Functions', () => {
         json: jest.fn(),
       };
 
-      // Mock admin.auth().verifyIdToken (authenticated)
+ // Mock admin.auth().verifyIdToken (authenticated)
       mockVerifyIdToken.mockResolvedValue({ uid: authenticatedUserId });
 
       // Mock Firestore interaction - Document does not exist
@@ -243,7 +244,7 @@ describe('User Cloud Functions', () => {
         json: jest.fn(),
       };
 
-      // Mock admin.auth().verifyIdToken (authenticated)
+ // Mock admin.auth().verifyIdToken (authenticated)
       mockVerifyIdToken.mockResolvedValue({ uid: authenticatedUserId });
 
       // Mock Firestore interaction - Document exists (validation happens before Firestore interaction)
@@ -294,5 +295,87 @@ describe('User Cloud Functions', () => {
     it('should remove a favorite provider', async () => {
       // TODO: Write test case
     });
+  });
+
+  // Test cases for createUser
+  describe('createUser', () => {
+    it('should create a new user document in Firestore', async () => {
+      // Mock the data provided in the request body for creating a user.
+      // Mock the request body with user data
+      const newUserProfileData = {
+        uid: 'test-user-uid',
+        email: 'test@example.com',
+        displayName: 'Test User',
+        photoURL: 'http://example.com/photo.jpg',
+        // Add any other fields your createUser function expects in the request body
+      };
+
+      // Mock the expected data that will be written to Firestore.
+      // This should include the fields from newUserProfileData and any
+      // default fields or server timestamps added by the createUser function.
+      const expectedFirestoreData = {
+        ...newUserProfileData,
+        createdAt: 'mock-timestamp', // Expect the serverTimestamp mock value
+        updatedAt: 'mock-timestamp', // Expect the serverTimestamp mock value
+        favoriteProviders: [], // Expect an empty array by default
+        // Add any other default fields set by createUser
+      };
+
+      // Mock the request object structure expected by the createUser function.
+      // This usually involves a 'body' property containing the user data.
+      const req: MockRequest = {
+        method: 'POST',
+        url: '/api/users',
+        body: newUserProfileData,
+      };
+      
+      // Mock response object
+      const res: any = {
+        status: jest.fn((code: number) => res),
+        json: jest.fn(),
+        send: jest.fn(),
+      };
+
+      // Mock the Firestore interactions: collection().doc().set().
+      // We need to mock 'collection', 'doc', and 'set' in sequence.
+      // Mock Firestore set operation
+      const mockSet = jest.fn().mockResolvedValue(true);
+
+      // Mock the doc() method to return an object with the mocked set() method.
+      const mockDocRef = {
+        set: mockSet,
+      };
+
+      // Mock the collection() method to return an object with the mocked doc() method.
+      const mockCollection = {
+        doc: jest.fn(() => mockDocRef),
+      };
+
+      // Spy on the firestore().collection() method to intercept the call
+      // and return our mock collection object.
+      jest.spyOn(admin.firestore(), 'collection').mockReturnValue(mockCollection as any);
+
+      // We also need to mock the Firebase Auth createUser method if your
+      // createUser function interacts with Firebase Auth *before* writing to Firestore.
+      // Based on the typical flow, it would create an Auth user first.
+      const mockCreateAuthUser = jest.fn().mockResolvedValue({ uid: newUserProfileData.uid });
+      jest.spyOn(admin.auth(), 'createUser').mockImplementation(mockCreateAuthUser);
+
+      // Call the function
+      await users.createUser(req as any, res as any);
+
+      // Assertions
+      expect(mockCollection.doc).toHaveBeenCalledWith(newUserProfileData.uid);
+      expect(mockSet).toHaveBeenCalledWith(expect.objectContaining(newUserProfileData)); // Expect user data to be set
+      expect(mockCreateAuthUser).toHaveBeenCalledWith({ // Verify Firebase Auth user was created
+        uid: newUserProfileData.uid,
+        email: newUserProfileData.email,
+        // Include other fields passed to auth().createUser()
+      });
+      expect(mockSet).toHaveBeenCalledWith(expect.objectContaining(expectedFirestoreData)); // Verify correct data structure is sent to Firestore
+      expect(res.status).toHaveBeenCalledWith(201); // Expect 201 Created status code
+      expect(res.json).toHaveBeenCalledWith({ message: 'User created successfully', userId: newUserProfileData.uid });
+    });
+    // TODO: Add test cases for error scenarios (e.g., missing uid, Firestore error)
   });
 });
